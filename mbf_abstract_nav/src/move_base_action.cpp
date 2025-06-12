@@ -244,7 +244,7 @@ void MoveBaseAction::actionGetPathDone(
   if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST ){
     move_base_result_.outcome = mbf_msgs::MoveBaseResult::INTERNAL_ERROR;
     move_base_result_.message = "GetPath action of move_base_flex was lost!";
-    goal_handle_.setAborted(move_base_result_, move_base_result_.message);
+    goal_handle_.setCanceled(move_base_result_, move_base_result_.message);
     return;
   }
   const mbf_msgs::GetPathResult &get_path_result = *result_ptr;
@@ -343,7 +343,7 @@ void MoveBaseAction::actionExePathDone(
   if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST ){
     move_base_result_.outcome = mbf_msgs::MoveBaseResult::INTERNAL_ERROR;
     move_base_result_.message = "ExePath action of move_base_flex was lost!";
-    goal_handle_.setAborted(move_base_result_, move_base_result_.message);
+    goal_handle_.setCanceled(move_base_result_, move_base_result_.message);
     return;
   }
 
@@ -466,7 +466,7 @@ void MoveBaseAction::actionRecoveryDone(
   if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST ){
     move_base_result_.outcome = mbf_msgs::MoveBaseResult::INTERNAL_ERROR;
     move_base_result_.message = "Recovery action of move_base_flex was lost!";
-    goal_handle_.setAborted(move_base_result_, move_base_result_.message);
+    goal_handle_.setCanceled(move_base_result_, move_base_result_.message);
     return;
   }
   // give the robot some time to stop oscillating after executing the recovery behavior
