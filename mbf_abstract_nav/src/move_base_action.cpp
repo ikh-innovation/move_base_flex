@@ -167,9 +167,13 @@ void MoveBaseAction::start(GoalHandle &goal_handle)
 
   // call get_path action server to get a first plan
   if (action_client_get_path_.getState().isDone()) {
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "start: get_path is done, sending a get path goal...");
     action_client_get_path_.sendGoal(
       get_path_goal_,
       boost::bind(&MoveBaseAction::actionGetPathDone, this, _1, _2));
+  }
+  else {
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "start: get_path is not done, skipping a get path goal...");
   }
 }
 
@@ -242,6 +246,7 @@ void MoveBaseAction::actionGetPathDone(
     const mbf_msgs::GetPathResultConstPtr &result_ptr)
 {
   if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST ){
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: Stepping in to save a lost action goal...");
     move_base_result_.outcome = mbf_msgs::MoveBaseResult::INTERNAL_ERROR;
     move_base_result_.message = "GetPath action of move_base_flex was lost!";
     goal_handle_.setCanceled(move_base_result_, move_base_result_.message);
@@ -276,12 +281,16 @@ void MoveBaseAction::actionGetPathDone(
       }
 
       if (action_client_exe_path_.getState().isDone()){
+        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is done, sending a get path goal...");
         action_client_exe_path_.sendGoal(
           exe_path_goal_,
           boost::bind(&MoveBaseAction::actionExePathDone, this, _1, _2),
           boost::bind(&MoveBaseAction::actionExePathActive, this),
           boost::bind(&MoveBaseAction::actionExePathFeedback, this, _1));
         action_state_ = EXE_PATH;
+      }
+      else {
+        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is not done, skipping a get path goal...");
       }
       break;
 
@@ -341,6 +350,7 @@ void MoveBaseAction::actionExePathDone(
 {
   ROS_DEBUG_STREAM_NAMED("move_base", "Action \"exe_path\" finished.");
   if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST ){
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionExePathDone: Stepping in to save a lost action goal...");
     move_base_result_.outcome = mbf_msgs::MoveBaseResult::INTERNAL_ERROR;
     move_base_result_.message = "ExePath action of move_base_flex was lost!";
     goal_handle_.setCanceled(move_base_result_, move_base_result_.message);
@@ -450,10 +460,14 @@ bool MoveBaseAction::attemptRecovery()
   ROS_DEBUG_STREAM_NAMED("move_base", "Start recovery behavior\""
       << *current_recovery_behavior_ <<"\".");
   if (action_client_exe_path_.getState().isDone()) {
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "attemptRecovery: exe_path is done, sending a get path goal...");
     action_client_recovery_.sendGoal(
       recovery_goal_,
       boost::bind(&MoveBaseAction::actionRecoveryDone, this, _1, _2)
     );
+  }
+  else {
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "attemptRecovery: exe_path is not done, skipping a get path goal...");
   }
   action_state_ = RECOVERY;
   return true;
@@ -464,6 +478,7 @@ void MoveBaseAction::actionRecoveryDone(
     const mbf_msgs::RecoveryResultConstPtr &result_ptr)
 {
   if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST ){
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionRecoveryDone: Stepping in to save a lost action goal...");
     move_base_result_.outcome = mbf_msgs::MoveBaseResult::INTERNAL_ERROR;
     move_base_result_.message = "Recovery action of move_base_flex was lost!";
     goal_handle_.setCanceled(move_base_result_, move_base_result_.message);
@@ -515,10 +530,14 @@ void MoveBaseAction::actionRecoveryDone(
       action_state_ = GET_PATH;
       current_recovery_behavior_++; // use next behavior, the next time;
       if (action_client_get_path_.getState().isDone()){
+        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionRecoveryDone: get_path is done, sending a get path goal...");
         action_client_get_path_.sendGoal(
           get_path_goal_,
           boost::bind(&MoveBaseAction::actionGetPathDone, this, _1, _2)
         );
+      }
+      else {
+        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionRecoveryDone: get_path is not done, skipping a get path goal...");
       }
       break;
 
@@ -560,9 +579,13 @@ void MoveBaseAction::replanningThread()
           exe_path_goal_.path = result->path;
           mbf_msgs::ExePathGoal goal(exe_path_goal_);
           if (action_client_exe_path_.getState().isDone()) {
+            ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "replanningThread: exe_path is done, sending a get path goal...");
             action_client_exe_path_.sendGoal(goal, boost::bind(&MoveBaseAction::actionExePathDone, this, _1, _2),
                                              boost::bind(&MoveBaseAction::actionExePathActive, this),
                                              boost::bind(&MoveBaseAction::actionExePathFeedback, this, _1));
+          }
+          else {
+            ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "replanningThread: exe_path is not done, skipping a get path goal...");
           }
         }
         else
