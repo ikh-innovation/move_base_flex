@@ -281,7 +281,7 @@ void MoveBaseAction::actionGetPathDone(
       }
 
       if (action_client_exe_path_.getState().isDone()){
-        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is done, sending a get path goal...");
+        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is done, sending an exe path goal...");
         action_client_exe_path_.sendGoal(
           exe_path_goal_,
           boost::bind(&MoveBaseAction::actionExePathDone, this, _1, _2),
@@ -290,7 +290,7 @@ void MoveBaseAction::actionGetPathDone(
         action_state_ = EXE_PATH;
       }
       else {
-        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is not done, skipping a get path goal...");
+        ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is not done, skipping an exe path goal...");
       }
       break;
 
@@ -460,14 +460,14 @@ bool MoveBaseAction::attemptRecovery()
   ROS_DEBUG_STREAM_NAMED("move_base", "Start recovery behavior\""
       << *current_recovery_behavior_ <<"\".");
   if (action_client_exe_path_.getState().isDone()) {
-    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "attemptRecovery: exe_path is done, sending a get path goal...");
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "attemptRecovery: exe_path is done, sending a recovery goal...");
     action_client_recovery_.sendGoal(
       recovery_goal_,
       boost::bind(&MoveBaseAction::actionRecoveryDone, this, _1, _2)
     );
   }
   else {
-    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "attemptRecovery: exe_path is not done, skipping a get path goal...");
+    ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "attemptRecovery: exe_path is not done, skipping a recovery goal...");
   }
   action_state_ = RECOVERY;
   return true;
