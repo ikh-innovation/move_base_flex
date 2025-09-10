@@ -349,7 +349,7 @@ void MoveBaseAction::actionExePathDone(
     const mbf_msgs::ExePathResultConstPtr &result_ptr)
 {
   ROS_DEBUG_STREAM_NAMED("move_base", "Action \"exe_path\" finished.");
-  if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST ){
+  if (goal_handle_.isValid() and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().PREEMPTING or state.state_ == actionlib::SimpleClientGoalState::LOST) {
     ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionExePathDone: Stepping in to save a lost action goal...");
     move_base_result_.outcome = mbf_msgs::MoveBaseResult::INTERNAL_ERROR;
     move_base_result_.message = "ExePath action of move_base_flex was lost!";
@@ -411,6 +411,11 @@ void MoveBaseAction::actionExePathDone(
       {
         // move_base preempted while executing exe_path; fill result and report canceled to the client
         ROS_INFO_STREAM_NAMED("move_base", "move_base preempted while executing exe_path");
+        goal_handle_.setCanceled(move_base_result_, state.getText());
+      }
+      if(exe_path_result.outcome == mbf_msgs::ExePathResult::CANCELED and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().ACTIVE ) {
+        action_state_ = CANCELED;
+        ROS_DEBUG_STREAM_NAMED("move_base_desync_action_fix", "actionExePathDone: exe_path was desynced, cancelling...");
         goal_handle_.setCanceled(move_base_result_, state.getText());
       }
       break;
