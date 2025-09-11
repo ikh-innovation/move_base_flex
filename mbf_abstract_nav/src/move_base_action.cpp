@@ -253,6 +253,12 @@ void MoveBaseAction::actionGetPathDone(
     return;
   }
   const mbf_msgs::GetPathResult &get_path_result = *result_ptr;
+  ROS_INFO("---actionGetPathDone---");
+  ROS_INFO_STREAM("Current validity of goal handle = " << goal_handle_.isValid());
+  ROS_INFO_STREAM("Current status of exe path = " << (int)goal_handle_.getGoalStatus().status);
+  ROS_INFO_STREAM("Get path result = " << (int)get_path_result.outcome);
+  ROS_INFO_STREAM("MBF state = " << (int)state.state_);
+  ROS_INFO("-----------------------");
 
   // copy result from get_path action
   fillMoveBaseResult(get_path_result, move_base_result_);
@@ -260,10 +266,12 @@ void MoveBaseAction::actionGetPathDone(
   switch (state.state_)
   {
     case actionlib::SimpleClientGoalState::PENDING:
+      ROS_INFO("1");
       ROS_FATAL_STREAM_NAMED("move_base", "get_path PENDING state not implemented, this should not be reachable!");
       break;
 
     case actionlib::SimpleClientGoalState::SUCCEEDED:
+      ROS_INFO("2");
       ROS_DEBUG_STREAM_NAMED("move_base", "Action \""
           << "move_base\" received a path from \""
           << "get_path\": " << state.getText());
@@ -275,12 +283,14 @@ void MoveBaseAction::actionGetPathDone(
 
       if (recovery_trigger_ == GET_PATH)
       {
+        ROS_INFO("2.1");
         ROS_WARN_NAMED("move_base", "Recovered from planner failure: restart recovery behaviors");
         current_recovery_behavior_ = recovery_behaviors_.begin();
         recovery_trigger_ = NONE;
       }
 
       if (action_client_exe_path_.getState().isDone()){
+        ROS_INFO("2.2");
         ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is done, sending an exe path goal...");
         action_client_exe_path_.sendGoal(
           exe_path_goal_,
@@ -290,22 +300,27 @@ void MoveBaseAction::actionGetPathDone(
         action_state_ = EXE_PATH;
       }
       else {
+        ROS_INFO("2.3");
         ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionGetPathDone: exe_path is not done, skipping an exe path goal...");
       }
       break;
 
     case actionlib::SimpleClientGoalState::ABORTED:
+      ROS_INFO("3");
       if (!action_client_exe_path_.getState().isDone())
       {
+        ROS_INFO("3.1");
         ROS_WARN_STREAM_NAMED("move_base", "Cancel previous goal, as planning to the new one has failed");
         cancel();
       }
       if (attemptRecovery())
       {
+        ROS_INFO("3.2");
         recovery_trigger_ = GET_PATH;
       }
       else
       {
+        ROS_INFO("3.3");
         // copy result from get_path action
         ROS_WARN_STREAM_NAMED("move_base", "Abort the execution of the planner: " << get_path_result.message);
         goal_handle_.setAborted(move_base_result_, state.getText());
@@ -315,9 +330,11 @@ void MoveBaseAction::actionGetPathDone(
 
     case actionlib::SimpleClientGoalState::RECALLED:
     case actionlib::SimpleClientGoalState::PREEMPTED:
+      ROS_INFO("4");
       ROS_INFO_STREAM_NAMED("move_base", "The last action goal to \"get_path\" has been " << state.toString());
       if (action_state_ == CANCELED)
       {
+        ROS_INFO("4.1");
         // move_base preempted while executing get_path; fill result and report canceled to the client
         ROS_INFO_STREAM_NAMED("move_base", "move_base preempted while executing get_path");
         goal_handle_.setCanceled(move_base_result_, state.getText());
@@ -325,23 +342,27 @@ void MoveBaseAction::actionGetPathDone(
       break;
 
     case actionlib::SimpleClientGoalState::REJECTED:
+      ROS_INFO("5");
       ROS_ERROR_STREAM_NAMED("move_base", "The last action goal to \"get_path\" has been " << state.toString());
       goal_handle_.setCanceled(move_base_result_, state.getText());
       action_state_ = FAILED;
       break;
 
     case actionlib::SimpleClientGoalState::LOST:
+      ROS_INFO("6");
       ROS_FATAL_STREAM_NAMED("move_base", "Connection lost to the action \"get_path\"!");
       goal_handle_.setAborted();
       action_state_ = FAILED;
       break;
 
     default:
+      ROS_INFO("7");
       ROS_FATAL_STREAM_NAMED("move_base", "Reached unknown action server state!");
       goal_handle_.setAborted();
       action_state_ = FAILED;
       break;
   }
+  ROS_INFO("---------*****---------");
 }
 
 void MoveBaseAction::actionExePathDone(
@@ -358,6 +379,12 @@ void MoveBaseAction::actionExePathDone(
   }
 
   const mbf_msgs::ExePathResult& exe_path_result = *result_ptr;
+  ROS_WARN("---actionExePathDone---");
+  ROS_WARN_STREAM("Current validity of goal handle = " << goal_handle_.isValid());
+  ROS_WARN_STREAM("Current status of exe path = " << (int)goal_handle_.getGoalStatus().status);
+  ROS_WARN_STREAM("Exe path result = " << (int)exe_path_result.outcome);
+  ROS_WARN_STREAM("MBF state = " << (int)state.state_);
+  ROS_WARN("-----------------------");
 
   // copy result from exe_path action
   fillMoveBaseResult(exe_path_result, move_base_result_);
@@ -367,6 +394,7 @@ void MoveBaseAction::actionExePathDone(
   switch (state.state_)
   {
     case actionlib::SimpleClientGoalState::SUCCEEDED:
+      ROS_WARN("1");
       move_base_result_.outcome = mbf_msgs::MoveBaseResult::SUCCESS;
       move_base_result_.message = "Action \"move_base\" succeeded!";
       ROS_INFO_STREAM_NAMED("move_base", move_base_result_.message);
@@ -375,6 +403,7 @@ void MoveBaseAction::actionExePathDone(
       break;
 
     case actionlib::SimpleClientGoalState::ABORTED:
+      ROS_WARN("2");
       action_state_ = FAILED;
 
       switch (exe_path_result.outcome)
@@ -384,19 +413,23 @@ void MoveBaseAction::actionExePathDone(
         case mbf_msgs::ExePathResult::NOT_INITIALIZED:
         case mbf_msgs::ExePathResult::INVALID_PLUGIN:
         case mbf_msgs::ExePathResult::INTERNAL_ERROR:
+          ROS_WARN("2.1");
           // none of these errors is recoverable
           goal_handle_.setAborted(move_base_result_, state.getText());
           break;
 
         default:
+          ROS_WARN("2.2");
           // all the rest are, so we start calling the recovery behaviors in sequence
 
           if (attemptRecovery())
           {
+            ROS_WARN("2.2.1");
             recovery_trigger_ = EXE_PATH;
           }
           else
           {
+            ROS_WARN("2.2.2");
             ROS_WARN_STREAM_NAMED("move_base", "Abort the execution of the controller: " << exe_path_result.message);
             goal_handle_.setAborted(move_base_result_, state.getText());
           }
@@ -406,38 +439,46 @@ void MoveBaseAction::actionExePathDone(
 
     case actionlib::SimpleClientGoalState::RECALLED:
     case actionlib::SimpleClientGoalState::PREEMPTED:
+      ROS_WARN("3");
       ROS_INFO_STREAM_NAMED("move_base", "The last action goal to \"exe_path\" has been " << state.toString());
       if (action_state_ == CANCELED)
       {
+        ROS_WARN("3.1");
         // move_base preempted while executing exe_path; fill result and report canceled to the client
         ROS_INFO_STREAM_NAMED("move_base", "move_base preempted while executing exe_path");
         goal_handle_.setCanceled(move_base_result_, state.getText());
       }
-      if(exe_path_result.outcome == mbf_msgs::ExePathResult::CANCELED and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().ACTIVE ) {
+      if (exe_path_result.outcome == mbf_msgs::ExePathResult::CANCELED and goal_handle_.getGoalStatus().status == goal_handle_.getGoalStatus().ACTIVE ) {
+        ROS_WARN("3.2");
         action_state_ = CANCELED;
+        ROS_WARN_STREAM("!---------- ATTEMPT TO CATCH THE DESYNC ----------!");
         ROS_DEBUG_STREAM_NAMED("move_base_desync_action_fix", "actionExePathDone: exe_path was desynced, cancelling...");
         goal_handle_.setCanceled(move_base_result_, state.getText());
       }
       break;
 
     case actionlib::SimpleClientGoalState::REJECTED:
+      ROS_WARN("4");
       ROS_ERROR_STREAM_NAMED("move_base", "The last action goal to \"exe_path\" has been " << state.toString());
       goal_handle_.setCanceled(move_base_result_, state.getText());
       action_state_ = FAILED;
       break;
 
     case actionlib::SimpleClientGoalState::LOST:
+      ROS_WARN("5");
       ROS_FATAL_STREAM_NAMED("move_base", "Connection lost to the action \"exe_path\"!");
       goal_handle_.setAborted();
       action_state_ = FAILED;
       break;
 
     default:
+      ROS_WARN("6");
       ROS_FATAL_STREAM_NAMED("move_base", "Reached unreachable case! Unknown SimpleActionServer state!");
       goal_handle_.setAborted();
       action_state_ = FAILED;
       break;
   }
+  ROS_WARN("---------!!!!!---------");
 }
 
 bool MoveBaseAction::attemptRecovery()
@@ -493,6 +534,12 @@ void MoveBaseAction::actionRecoveryDone(
   last_oscillation_reset_ = ros::Time::now();
 
   const mbf_msgs::RecoveryResult& recovery_result = *result_ptr;
+  ROS_ERROR("---actionRecoveryDone---");
+  ROS_ERROR_STREAM("Current validity of goal handle = " << goal_handle_.isValid());
+  ROS_ERROR_STREAM("Current status of exe path = " << (int)goal_handle_.getGoalStatus().status);
+  ROS_ERROR_STREAM("Recovery result = " << (int)recovery_result.outcome);
+  ROS_ERROR_STREAM("MBF state = " << (int)state.state_);
+  ROS_ERROR("-----------------------");
 
   switch (state.state_)
   {
@@ -500,6 +547,7 @@ void MoveBaseAction::actionRecoveryDone(
     case actionlib::SimpleClientGoalState::ABORTED:
     case actionlib::SimpleClientGoalState::RECALLED:
     case actionlib::SimpleClientGoalState::PREEMPTED:
+      ROS_ERROR("1");
       ROS_WARN_STREAM_NAMED("move_base", "The recovery behavior \"" << *current_recovery_behavior_ << "\" has been "
                                                                     << state.toString());
       ROS_DEBUG_STREAM("Recovery behavior message: " << recovery_result.message
@@ -507,6 +555,7 @@ void MoveBaseAction::actionRecoveryDone(
 
       if (action_state_ == CANCELED)
       {
+        ROS_ERROR("1.1");
         // move_base preempted while executing a recovery; fill result and report canceled to the client
         fillMoveBaseResult(recovery_result, move_base_result_);
         ROS_INFO_STREAM_NAMED("move_base", "move_base preempted while executing a recovery behavior");
@@ -515,6 +564,7 @@ void MoveBaseAction::actionRecoveryDone(
       }
       if (current_recovery_behavior_ == recovery_behaviors_.end())
       {
+        ROS_ERROR("1.2");
         // we run out of recovery behaviors; concede defeat
         action_state_ = FAILED;
         ROS_DEBUG_STREAM_NAMED("move_base", "All recovery behaviors failed. Aborting move_base action");
@@ -526,6 +576,7 @@ void MoveBaseAction::actionRecoveryDone(
       // so we try replanning again (wrong, but works)
       // [[fallthrough]]; C++17
     case actionlib::SimpleClientGoalState::SUCCEEDED:
+      ROS_ERROR("2");
       // go to planning state
       ROS_DEBUG_STREAM_COND_NAMED(state == actionlib::SimpleClientGoalState::SUCCEEDED, "move_base",
                                   "Execution of the recovery behavior \"" << *current_recovery_behavior_
@@ -535,6 +586,7 @@ void MoveBaseAction::actionRecoveryDone(
       action_state_ = GET_PATH;
       current_recovery_behavior_++; // use next behavior, the next time;
       if (action_client_get_path_.getState().isDone()){
+        ROS_ERROR("2.1");
         ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionRecoveryDone: get_path is done, sending a get path goal...");
         action_client_get_path_.sendGoal(
           get_path_goal_,
@@ -542,21 +594,25 @@ void MoveBaseAction::actionRecoveryDone(
         );
       }
       else {
+        ROS_ERROR("2.2");
         ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionRecoveryDone: get_path is not done, skipping a get path goal...");
       }
       break;
 
     case actionlib::SimpleClientGoalState::LOST:
+      ROS_ERROR("3");
       ROS_FATAL_STREAM_NAMED("move_base", "Connection lost to the action \"recovery\"!");
       goal_handle_.setAborted();
       action_state_ = FAILED;
       break;
     default:
+      ROS_ERROR("4");
       ROS_FATAL_STREAM_NAMED("move_base", "Reached unreachable case! Unknown state!");
       goal_handle_.setAborted();
       action_state_ = FAILED;
       break;
   }
+  ROS_ERROR("---------#####---------");
 }
 
 bool MoveBaseAction::replanningActive() const
