@@ -255,7 +255,7 @@ void MoveBaseAction::actionGetPathDone(
   const mbf_msgs::GetPathResult &get_path_result = *result_ptr;
   ROS_INFO("---actionGetPathDone---");
   ROS_INFO_STREAM("Current validity of goal handle = " << goal_handle_.isValid());
-  ROS_INFO_STREAM("Current status of exe path = " << (int)goal_handle_.getGoalStatus().status);
+  ROS_INFO_STREAM("Current status of get path = " << (int)goal_handle_.getGoalStatus().status);
   ROS_INFO_STREAM("Get path result = " << (int)get_path_result.outcome);
   ROS_INFO_STREAM("MBF state = " << (int)state.state_);
   ROS_INFO("-----------------------");
@@ -536,7 +536,7 @@ void MoveBaseAction::actionRecoveryDone(
   const mbf_msgs::RecoveryResult& recovery_result = *result_ptr;
   ROS_ERROR("---actionRecoveryDone---");
   ROS_ERROR_STREAM("Current validity of goal handle = " << goal_handle_.isValid());
-  ROS_ERROR_STREAM("Current status of exe path = " << (int)goal_handle_.getGoalStatus().status);
+  ROS_ERROR_STREAM("Current status of recovery = " << (int)goal_handle_.getGoalStatus().status);
   ROS_ERROR_STREAM("Recovery result = " << (int)recovery_result.outcome);
   ROS_ERROR_STREAM("MBF state = " << (int)state.state_);
   ROS_ERROR("-----------------------");
