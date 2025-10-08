@@ -281,6 +281,15 @@ void ControllerAction::runImpl(GoalHandle &goal_handle, AbstractControllerExecut
         break;
 
       case AbstractControllerExecution::GOT_LOCAL_CMD:
+                
+        if (last_oscillation_timeout_ != oscillation_timeout_)
+        {
+          ROS_WARN_STREAM_NAMED(name_, "Oscillation timeout changed from "
+              << last_oscillation_timeout_.toSec() << "s to " << oscillation_timeout_.toSec() << "s");
+          last_oscillation_reset = ros::Time::now();
+        }
+        last_oscillation_timeout_ = oscillation_timeout_;
+
         if (!oscillation_timeout_.isZero())
         {
           // check if oscillating
@@ -291,7 +300,7 @@ void ControllerAction::runImpl(GoalHandle &goal_handle, AbstractControllerExecut
             oscillation_pose = robot_pose_;
           }
           else if (last_oscillation_reset + oscillation_timeout_ < ros::Time::now())
-          {
+          { 
             ROS_WARN_STREAM_NAMED(name_, "The controller is oscillating for "
                 << (ros::Time::now() - last_oscillation_reset).toSec() << "s");
 
@@ -302,6 +311,7 @@ void ControllerAction::runImpl(GoalHandle &goal_handle, AbstractControllerExecut
             break;
           }
         }
+        
         publishExePathFeedback(goal_handle, execution.getOutcome(), execution.getMessage(), execution.getVelocityCmd());
         break;
 

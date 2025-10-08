@@ -197,6 +197,14 @@ void MoveBaseAction::actionExePathFeedback(const mbf_msgs::ExePathFeedbackConstP
   // we create a navigation-level oscillation detection using exe_path action's feedback,
   // as the latter doesn't handle oscillations created by quickly failing repeated plans
 
+  if (last_oscillation_timeout_ != oscillation_timeout_)
+  {
+    ROS_WARN_STREAM_NAMED(name_, "Oscillation timeout changed from "
+        << last_oscillation_timeout_.toSec() << "s to " << oscillation_timeout_.toSec() << "s");
+    last_oscillation_reset_ = ros::Time::now();
+  }
+  last_oscillation_timeout_ = oscillation_timeout_;
+
   // if oscillation detection is enabled by oscillation_timeout != 0
   if (!oscillation_timeout_.isZero())
   {
