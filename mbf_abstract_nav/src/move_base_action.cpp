@@ -84,10 +84,14 @@ void MoveBaseAction::reconfigure(mbf_abstract_nav::MoveBaseFlexConfig& config, u
     replanning_period_.fromSec(1.0 / config.planner_frequency);
   else
     replanning_period_.fromSec(0.0);
-  oscillation_timeout_ = ros::Duration(config.oscillation_timeout);
+  // an augmentation of 2s is added on the oscillation_timeout_ in order to assure that controller_action oscillation_timeout_
+  // will trigger first (in the opposite case a thread desync happens)
+  oscillation_timeout_ = ros::Duration(config.oscillation_timeout) + ros::Duration(2);
   oscillation_distance_ = config.oscillation_distance;
   oscillation_angle_ = config.oscillation_angle;
   recovery_enabled_ = config.recovery_enabled;
+
+  // ROS_WARN_STREAM("[MoveBase Action] Oscillation timeout reconfigured to: "<< oscillation_timeout_.toSec());
 }
 
 void MoveBaseAction::cancel()
