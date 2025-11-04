@@ -60,6 +60,8 @@ void ControllerAction::reconfigure(mbf_abstract_nav::MoveBaseFlexConfig& config,
   oscillation_timeout_ = ros::Duration(config.oscillation_timeout);
   oscillation_distance_ = config.oscillation_distance;
   oscillation_angle_ = config.oscillation_angle;
+
+  ROS_WARN_STREAM("[Controller Action] Oscillation timeout reconfigured to: "<< oscillation_timeout_.toSec());
 }
 
 void ControllerAction::start(
@@ -293,9 +295,11 @@ void ControllerAction::runImpl(GoalHandle &goal_handle, AbstractControllerExecut
         if (!oscillation_timeout_.isZero())
         {
           // check if oscillating
+          // ROS_WARN_STREAM_NAMED(name_, "Chk: now - last_osc_reset: "<<(ros::Time::now() - last_oscillation_reset).toSec());
           if (mbf_utility::distance(robot_pose_, oscillation_pose) >= oscillation_distance_ ||
               mbf_utility::angle(robot_pose_, oscillation_pose) >= oscillation_angle_)
           {
+            // ROS_WARN_STREAM_NAMED(name_, "Update last oscillation reset ");
             last_oscillation_reset = ros::Time::now();
             oscillation_pose = robot_pose_;
           }
