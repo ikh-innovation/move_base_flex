@@ -132,6 +132,7 @@ class MoveBaseAction
 
   //! timeout after a oscillation is detected
   ros::Duration oscillation_timeout_;
+  ros::Duration last_oscillation_timeout_;
 
   //! minimal move distance to not detect an oscillation
   double oscillation_distance_;
