@@ -666,19 +666,9 @@ void MoveBaseAction::replanningThread()
           ROS_DEBUG_STREAM_NAMED("move_base", "Replanning succeeded; sending a goal to \"exe_path\" with the new plan");
           exe_path_goal_.path = result->path;
           mbf_msgs::ExePathGoal goal(exe_path_goal_);
-          if (action_client_exe_path_.getState().isDone())
-          {
-            ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "replanningThread: exe_path is done, sending a get "
-                                                                "path goal...");
-            action_client_exe_path_.sendGoal(goal, boost::bind(&MoveBaseAction::actionExePathDone, this, _1, _2),
-                                             boost::bind(&MoveBaseAction::actionExePathActive, this),
-                                             boost::bind(&MoveBaseAction::actionExePathFeedback, this, _1));
-          }
-          else
-          {
-            ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "replanningThread: exe_path is not done, skipping a "
-                                                                "get path goal...");
-          }
+          action_client_exe_path_.sendGoal(goal, boost::bind(&MoveBaseAction::actionExePathDone, this, _1, _2),
+                                            boost::bind(&MoveBaseAction::actionExePathActive, this),
+                                            boost::bind(&MoveBaseAction::actionExePathFeedback, this, _1));
         }
         else
         {
