@@ -114,4 +114,9 @@ if(CATKIN_ENABLE_TESTING)
     test/planner_action.launch
     test/planner_action.cpp)
   target_link_libraries(planner_action_test ${MBF_ABSTRACT_SERVER_LIB})
+
+  add_rostest_gtest(move_base_action_test
+    test/move_base_action.launch
+    test/move_base_action.cpp)
+  target_link_libraries(move_base_action_test ${MBF_ABSTRACT_SERVER_LIB})
 endif()
