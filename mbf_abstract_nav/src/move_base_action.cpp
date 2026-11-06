@@ -704,6 +704,11 @@ void MoveBaseAction::replanningThread()
       }
       last_replan_time = ros::Time::now();
     }
+    else
+    {
+      // waiting for the next replanning cycle; without sleeping, this loop keeps a core busy
+      update_period.sleep();
+    }
   }
 }
 
