@@ -661,7 +661,11 @@ void MoveBaseAction::replanningThread()
       {
         actionlib::SimpleClientGoalState state = action_client_get_path_.getState();
         mbf_msgs::GetPathResultConstPtr result = action_client_get_path_.getResult();
-        if (state == actionlib::SimpleClientGoalState::SUCCEEDED && replanningActive())
+        if (!result)
+        {
+          ROS_WARN_STREAM_NAMED("move_base", "Replanning finished as " << state.toString() << " without a result");
+        }
+        else if (state == actionlib::SimpleClientGoalState::SUCCEEDED && replanningActive())
         {
           ROS_DEBUG_STREAM_NAMED("move_base", "Replanning succeeded; sending a goal to \"exe_path\" with the new plan");
           exe_path_goal_.path = result->path;
