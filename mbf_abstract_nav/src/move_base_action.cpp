@@ -40,6 +40,7 @@
 
 #include <limits>
 
+#include <boost/thread/locks.hpp>
 #include <mbf_utility/navigation_utility.h>
 
 #include "mbf_abstract_nav/MoveBaseFlexConfig.h"
@@ -47,31 +48,48 @@
 
 namespace mbf_abstract_nav
 {
+namespace
+{
+ros::NodeHandle nodeHandleWithQueue(ros::NodeHandle nh, ros::CallbackQueue* queue)
+{
+  nh.setCallbackQueue(queue);
+  return nh;
+}
+}  // namespace
+
 MoveBaseAction::MoveBaseAction(const std::string& name, const mbf_utility::RobotInformation& robot_info,
                                const std::vector<std::string>& behaviors)
   : name_(name)
   , robot_info_(robot_info)
   , private_nh_("~")
-  , action_client_exe_path_(private_nh_, "exe_path")
-  , action_client_get_path_(private_nh_, "get_path")
-  , action_client_recovery_(private_nh_, "recovery")
+  , action_clients_nh_(nodeHandleWithQueue(private_nh_, &action_clients_queue_))
+  // no spin threads; replanningThread spins action_clients_queue_ instead
+  , action_client_exe_path_(action_clients_nh_, "exe_path", false)
+  , action_client_get_path_(action_clients_nh_, "get_path", false)
+  , action_client_recovery_(action_clients_nh_, "recovery", false)
   , oscillation_timeout_(0)
   , oscillation_distance_(0)
   , oscillation_angle_(0)
   , replanning_thread_shutdown_(false)
+  , replanning_goal_pending_(false)
   , recovery_enabled_(true)
   , behaviors_(behaviors)
   , action_state_(NONE)
   , recovery_trigger_(NONE)
   , dist_to_goal_(std::numeric_limits<double>::infinity())
-  , replanning_thread_(boost::bind(&MoveBaseAction::replanningThread, this))
 {
+  // started here and not in the initializer list, as members are initialized in declaration order and the
+  // thread uses some members declared after replanning_thread_
+  replanning_thread_ = boost::thread(boost::bind(&MoveBaseAction::replanningThread, this));
 }
 
 MoveBaseAction::~MoveBaseAction()
 {
-  action_state_ = NONE;
-  replanning_thread_shutdown_ = true;
+  {
+    boost::lock_guard<boost::mutex> guard(mutex_);
+    action_state_ = NONE;
+    replanning_thread_shutdown_ = true;
+  }
   if (replanning_thread_.joinable())
   {
     replanning_thread_.join();
@@ -80,12 +98,14 @@ MoveBaseAction::~MoveBaseAction()
 
 void MoveBaseAction::reconfigure(mbf_abstract_nav::MoveBaseFlexConfig& config, uint32_t level)
 {
+  boost::lock_guard<boost::mutex> guard(mutex_);
+
   if (config.planner_frequency > 0.0)
     replanning_period_.fromSec(1.0 / config.planner_frequency);
   else
     replanning_period_.fromSec(0.0);
-  // an augmentation of 2s (except oscillation_timeout_ == 0) is added on the oscillation_timeout_ in order to assure that controller_action oscillation_timeout_
-  // will trigger first (in the opposite case a thread desync happens) 
+  // an augmentation of 2s (except oscillation_timeout_ == 0) is added on the oscillation_timeout_ in order to assure
+  // that controller_action oscillation_timeout_ will trigger first (in the opposite case a thread desync happens)
   oscillation_timeout_ = (config.oscillation_timeout == 0.0) ? ros::Duration(config.oscillation_timeout) : ros::Duration(config.oscillation_timeout) + ros::Duration(2);
   oscillation_distance_ = config.oscillation_distance;
   oscillation_angle_ = config.oscillation_angle;
@@ -95,6 +115,12 @@ void MoveBaseAction::reconfigure(mbf_abstract_nav::MoveBaseFlexConfig& config, u
 }
 
 void MoveBaseAction::cancel()
+{
+  boost::lock_guard<boost::mutex> guard(mutex_);
+  cancelActions();
+}
+
+void MoveBaseAction::cancelActions()
 {
   action_state_ = CANCELED;
 
@@ -116,6 +142,17 @@ void MoveBaseAction::cancel()
 
 void MoveBaseAction::start(GoalHandle& goal_handle)
 {
+  // potentially blocking calls first, without holding mutex_: getRobotPose can wait up to tf_timeout, and
+  // waitForServer needs replanningThread to keep spinning action_clients_queue_ to see the servers' status
+  geometry_msgs::PoseStamped robot_pose;
+  const bool got_robot_pose = robot_info_.getRobotPose(robot_pose);
+  ros::Duration connection_timeout(1.0);
+  const bool servers_connected = got_robot_pose && action_client_get_path_.waitForServer(connection_timeout) &&
+                                 action_client_exe_path_.waitForServer(connection_timeout) &&
+                                 action_client_recovery_.waitForServer(connection_timeout);
+
+  boost::lock_guard<boost::mutex> guard(mutex_);
+
   dist_to_goal_ = std::numeric_limits<double>::infinity();
 
   action_state_ = GET_PATH;
@@ -133,8 +170,6 @@ void MoveBaseAction::start(GoalHandle& goal_handle)
   get_path_goal_.planner = goal.planner;
   exe_path_goal_.controller = goal.controller;
 
-  ros::Duration connection_timeout(1.0);
-
   last_oscillation_reset_ = ros::Time::now();
 
   // start recovering with the first behavior, use the recovery behaviors from the action request, if specified,
@@ -144,7 +179,7 @@ void MoveBaseAction::start(GoalHandle& goal_handle)
   current_recovery_behavior_ = recovery_behaviors_.begin();
 
   // get the current robot pose only at the beginning, as exe_path will keep updating it as we move
-  if (!robot_info_.getRobotPose(robot_pose_))
+  if (!got_robot_pose)
   {
     ROS_ERROR_STREAM_NAMED("move_base", "Could not get the current robot pose!");
     move_base_result_.message = "Could not get the current robot pose!";
@@ -152,13 +187,11 @@ void MoveBaseAction::start(GoalHandle& goal_handle)
     goal_handle.setAborted(move_base_result_, move_base_result_.message);
     return;
   }
+  robot_pose_ = robot_pose;
   goal_pose_ = goal.target_pose;
   last_oscillation_pose_ = robot_pose_;
 
-  // wait for server connections
-  if (!action_client_get_path_.waitForServer(connection_timeout) ||
-      !action_client_exe_path_.waitForServer(connection_timeout) ||
-      !action_client_recovery_.waitForServer(connection_timeout))
+  if (!servers_connected)
   {
     ROS_ERROR_STREAM_NAMED("move_base", "Could not connect to one or more of move_base_flex actions: "
                                         "\"get_path\", \"exe_path\", \"recovery \"!");
@@ -173,6 +206,7 @@ void MoveBaseAction::start(GoalHandle& goal_handle)
   {
     ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "start: get_path is done, sending a get path goal...");
     action_client_get_path_.sendGoal(get_path_goal_, boost::bind(&MoveBaseAction::actionGetPathDone, this, _1, _2));
+    replanning_goal_pending_ = false;  // replaced; actionGetPathDone will handle the result
   }
   else
   {
@@ -325,7 +359,7 @@ void MoveBaseAction::actionGetPathDone(const actionlib::SimpleClientGoalState& s
       {
         ROS_INFO("3.1");
         ROS_WARN_STREAM_NAMED("move_base", "Cancel previous goal, as planning to the new one has failed");
-        cancel();
+        cancelActions();  // not cancel(): we already hold mutex_
       }
       if (attemptRecovery())
       {
@@ -617,6 +651,7 @@ void MoveBaseAction::actionRecoveryDone(const actionlib::SimpleClientGoalState& 
         ROS_DEBUG_STREAM_NAMED("move_base_lost_action_fix", "actionRecoveryDone: get_path is done, sending a get path "
                                                             "goal...");
         action_client_get_path_.sendGoal(get_path_goal_, boost::bind(&MoveBaseAction::actionGetPathDone, this, _1, _2));
+        replanning_goal_pending_ = false;  // replaced; actionGetPathDone will handle the result
       }
       else
       {
@@ -650,56 +685,78 @@ bool MoveBaseAction::replanningActive() const
 
 void MoveBaseAction::replanningThread()
 {
-  ros::Duration update_period(0.005);
+  // This thread is the only one spinning action_clients_queue_, so the action clients' callbacks run here,
+  // holding mutex_, like start, cancel and reconfigure do. Hence the clients are never used concurrently.
+  // Never wait for a result here (e.g. with waitForResult): only this thread can deliver it.
+  const ros::WallDuration update_period(0.005);
   ros::Time last_replan_time = ros::Time::now();
 
-  while (ros::ok() && !replanning_thread_shutdown_)
+  while (ros::ok())
   {
-    if (!action_client_get_path_.getState().isDone())
     {
-      if (action_client_get_path_.waitForResult(update_period))
+      boost::lock_guard<boost::mutex> guard(mutex_);
+      if (replanning_thread_shutdown_)
       {
-        actionlib::SimpleClientGoalState state = action_client_get_path_.getState();
-        mbf_msgs::GetPathResultConstPtr result = action_client_get_path_.getResult();
-        if (state == actionlib::SimpleClientGoalState::SUCCEEDED && replanningActive())
+        break;
+      }
+
+      action_clients_queue_.callAvailable();
+
+      if (replanning_goal_pending_)
+      {
+        if (action_client_get_path_.getState().isDone())
         {
-          ROS_DEBUG_STREAM_NAMED("move_base", "Replanning succeeded; sending a goal to \"exe_path\" with the new plan");
-          exe_path_goal_.path = result->path;
-          mbf_msgs::ExePathGoal goal(exe_path_goal_);
-          action_client_exe_path_.sendGoal(goal, boost::bind(&MoveBaseAction::actionExePathDone, this, _1, _2),
-                                            boost::bind(&MoveBaseAction::actionExePathActive, this),
-                                            boost::bind(&MoveBaseAction::actionExePathFeedback, this, _1));
+          replanning_goal_pending_ = false;
+          actionlib::SimpleClientGoalState state = action_client_get_path_.getState();
+          mbf_msgs::GetPathResultConstPtr result = action_client_get_path_.getResult();
+          if (!result)
+          {
+            ROS_WARN_STREAM_NAMED("move_base", "Replanning finished as " << state.toString() << " without a result");
+          }
+          else if (state == actionlib::SimpleClientGoalState::SUCCEEDED && replanningActive())
+          {
+            ROS_DEBUG_STREAM_NAMED("move_base", "Replanning succeeded; sending a goal to \"exe_path\" with the new "
+                                                "plan");
+            exe_path_goal_.path = result->path;
+            mbf_msgs::ExePathGoal goal(exe_path_goal_);
+            action_client_exe_path_.sendGoal(goal, boost::bind(&MoveBaseAction::actionExePathDone, this, _1, _2),
+                                             boost::bind(&MoveBaseAction::actionExePathActive, this),
+                                             boost::bind(&MoveBaseAction::actionExePathFeedback, this, _1));
+          }
+          else
+          {
+            ROS_DEBUG_STREAM_NAMED("move_base",
+                                   "Replanning failed with error code " << result->outcome << ": " << result->message);
+          }
+        }
+        // else keep waiting for planning to complete
+      }
+      else if (!replanningActive())
+      {
+        last_replan_time = ros::Time::now();
+      }
+      else if (ros::Time::now() - last_replan_time >= replanning_period_)
+      {
+        ROS_DEBUG_STREAM_NAMED("move_base", "Next replanning cycle, using the \"get_path\" action!");
+        if (action_client_get_path_.getState().isDone())
+        {
+          action_client_get_path_.sendGoal(get_path_goal_);
+          replanning_goal_pending_ = true;
         }
         else
         {
-          ROS_DEBUG_STREAM_NAMED("move_base",
-                                 "Replanning failed with error code " << result->outcome << ": " << result->message);
+          ROS_ERROR("---------------------------------------");
+          ROS_ERROR("---------------------------------------");
+          ROS_ERROR("!!DISMISSED THE GOAL!!");
+          ROS_ERROR("---------------------------------------");
+          ROS_ERROR("---------------------------------------");
         }
+        last_replan_time = ros::Time::now();
       }
-      // else keep waiting for planning to complete (we already waited update_period in waitForResult)
     }
-    else if (!replanningActive())
-    {
-      last_replan_time = ros::Time::now();
-      update_period.sleep();
-    }
-    else if (ros::Time::now() - last_replan_time >= replanning_period_)
-    {
-      ROS_DEBUG_STREAM_NAMED("move_base", "Next replanning cycle, using the \"get_path\" action!");
-      if (action_client_get_path_.getState().isDone())
-      {
-        action_client_get_path_.sendGoal(get_path_goal_);
-      }
-      else
-      {
-        ROS_ERROR("---------------------------------------");
-        ROS_ERROR("---------------------------------------");
-        ROS_ERROR("!!DISMISSED THE GOAL!!");
-        ROS_ERROR("---------------------------------------");
-        ROS_ERROR("---------------------------------------");
-      }
-      last_replan_time = ros::Time::now();
-    }
+    // sleep on every iteration, without holding mutex_; wall time, so the clients' callbacks keep flowing even if
+    // simulated time stops
+    update_period.sleep();
   }
 }
 

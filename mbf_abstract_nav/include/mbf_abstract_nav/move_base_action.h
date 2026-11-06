@@ -42,6 +42,8 @@
 
 #include <actionlib/server/action_server.h>
 #include <actionlib/client/simple_action_client.h>
+#include <boost/thread/mutex.hpp>
+#include <ros/callback_queue.h>
 
 #include <mbf_msgs/MoveBaseAction.h>
 #include <mbf_msgs/GetPathAction.h>
@@ -104,6 +106,9 @@ class MoveBaseAction
 
   void replanningThread();
 
+  //! Cancels the get_path, exe_path and recovery goals in progress; the caller must hold mutex_
+  void cancelActions();
+
   /**
    * Utility method that fills move base action result with the result of any of the action clients.
    * @tparam ResultType
@@ -155,6 +160,14 @@ class MoveBaseAction
 
   ros::NodeHandle private_nh_;
 
+  //! Callback queue for the action clients below. Only replanning_thread_ spins it, while holding mutex_,
+  //! so the clients' callbacks never run concurrently with each other or with start, cancel and reconfigure.
+  //! Declared before the clients, so it is destroyed after them
+  ros::CallbackQueue action_clients_queue_;
+
+  //! Same namespace as private_nh_, but using action_clients_queue_
+  ros::NodeHandle action_clients_nh_;
+
   //! Action client used by the move_base action
   ActionClientExePath action_client_exe_path_;
 
@@ -170,9 +183,17 @@ class MoveBaseAction
   //! Replanning period dynamically reconfigurable
   ros::Duration replanning_period_;
 
-  //! Replanning thread, running permanently
+  //! Replanning thread, running permanently; it also spins action_clients_queue_
   boost::thread replanning_thread_;
   bool replanning_thread_shutdown_;
+
+  //! true while a get_path goal sent by replanningThread is pending; it has no done callback, so that thread
+  //! handles its result
+  bool replanning_goal_pending_;
+
+  //! Protects all the members, including the action clients, which are not thread-safe: a getState call
+  //! concurrent with a sendGoal on the same client can crash the node
+  boost::mutex mutex_;
 
   //! true, if recovery behavior for the MoveBase action is enabled.
   bool recovery_enabled_;
