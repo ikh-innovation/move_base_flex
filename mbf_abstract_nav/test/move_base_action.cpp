@@ -366,6 +366,89 @@ TEST(MoveBaseActionTest, concurrentGoalsAndCancels)
   spinner.stop();
 }
 
+TEST(MoveBaseActionTest, sharedGetPathServer)
+{
+  typedef actionlib::ActionServer<mbf_msgs::GetPathAction> GetPathServer;
+  typedef actionlib::ActionClient<mbf_msgs::GetPathAction> GetPathClient;
+
+  ros::NodeHandle private_nh("~");
+  private_nh.setParam("get_path/actionlib_client_sub_queue_size", 1);
+  ros::AsyncSpinner spinner(1);
+  spinner.start();
+
+  RobotPose robot_pose;
+  const ros::Duration tf_timeout(0.5);
+  mbf_utility::RobotInformation robot_info(robot_pose.tf(), GLOBAL_FRAME, ROBOT_FRAME, tf_timeout);
+
+  GetPathServer get_path(
+      private_nh, "get_path",
+      [](GetPathServer::GoalHandle goal_handle) {
+        goal_handle.setAccepted();
+        mbf_msgs::GetPathResult result;
+        result.outcome = mbf_msgs::GetPathResult::SUCCESS;
+        result.path.header.frame_id = GLOBAL_FRAME;
+        result.path.poses.resize(2);
+        goal_handle.setSucceeded(result);
+      },
+      false);
+  get_path.start();
+  actionlib::SimpleActionServer<mbf_msgs::ExePathAction> exe_path(private_nh, "exe_path", false);
+  exe_path.registerGoalCallback([&exe_path] {
+    exe_path.acceptNewGoal();
+    mbf_msgs::ExePathResult result;
+    result.outcome = mbf_msgs::ExePathResult::SUCCESS;
+    exe_path.setSucceeded(result);
+  });
+  exe_path.start();
+  actionlib::SimpleActionServer<mbf_msgs::RecoveryAction> recovery(private_nh, "recovery", false);
+  recovery.start();
+
+  const std::vector<std::string> recovery_behaviors;
+  mbf_abstract_nav::MoveBaseAction move_base("move_base", robot_info, recovery_behaviors);
+  mbf_abstract_nav::MoveBaseFlexConfig config = mbf_abstract_nav::MoveBaseFlexConfig::__getDefault__();
+  config.planner_frequency = 0.0;
+  config.oscillation_timeout = 0.0;
+  move_base.reconfigure(config, 0);
+
+  MoveBaseServer server(
+      private_nh, "move_base", [&move_base](MoveBaseServer::GoalHandle goal_handle) { move_base.start(goal_handle); },
+      [&move_base](MoveBaseServer::GoalHandle) { move_base.cancel(); }, false);
+  server.start();
+
+  MoveBaseClient client(private_nh, "move_base");
+  ASSERT_TRUE(client.waitForActionServerToStart(ros::Duration(10.0)));
+
+  boost::atomic<bool> stop_intruder(false);
+  boost::thread intruder([&private_nh, &stop_intruder] {
+    GetPathClient get_path_client(private_nh, "get_path");
+    while (!stop_intruder)
+    {
+      get_path_client.sendGoal(mbf_msgs::GetPathGoal());
+      ros::WallDuration(0.002).sleep();
+    }
+  });
+
+  for (int i = 0; i < 50; i++)
+  {
+    MoveBaseClient::GoalHandle goal_handle = client.sendGoal(goalAt(10.0));
+    const ros::WallTime deadline = ros::WallTime::now() + ros::WallDuration(3.0);
+    while (goal_handle.getCommState() != actionlib::CommState::DONE && ros::WallTime::now() < deadline)
+    {
+      ros::WallDuration(0.001).sleep();
+    }
+    if (goal_handle.getCommState() != actionlib::CommState::DONE)
+    {
+      ADD_FAILURE() << "goal " << i << " did not finish within 3 seconds, aka MoveBaseAction lost a get_path result";
+      break;
+    }
+    EXPECT_EQ(actionlib::TerminalState::SUCCEEDED, goal_handle.getTerminalState().state_) << "goal " << i;
+  }
+
+  stop_intruder = true;
+  intruder.join();
+  spinner.stop();
+}
+
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "move_base_action_test");

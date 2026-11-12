@@ -50,9 +50,23 @@ namespace mbf_abstract_nav
 {
 namespace
 {
-ros::NodeHandle nodeHandleWithQueue(ros::NodeHandle nh, ros::CallbackQueue* queue)
+ros::NodeHandle nodeHandleWithQueueAndUnlimitedSize(ros::NodeHandle nh, ros::CallbackQueue* queue)
 {
   nh.setCallbackQueue(queue);
+
+  const std::string actions[] = { "exe_path", "get_path", "recovery" };
+  for (const auto& action : actions)
+  {
+    const std::string param = action + "/actionlib_client_sub_queue_size";
+    int queue_size = 0;
+    if (nh.getParam(param, queue_size) && queue_size > 0)
+    {
+      ROS_WARN_STREAM_NAMED("move_base", "Ignoring " << action << "'s queue_size = " << queue_size
+                                                     << ": and setting it to unlimited (0) to avoid lost results that "
+                                                        "could block the callback");
+      nh.setParam(param, 0);
+    }
+  }
   return nh;
 }
 }  // namespace
@@ -62,7 +76,7 @@ MoveBaseAction::MoveBaseAction(const std::string& name, const mbf_utility::Robot
   : name_(name)
   , robot_info_(robot_info)
   , private_nh_("~")
-  , action_clients_nh_(nodeHandleWithQueue(private_nh_, &action_clients_queue_))
+  , action_clients_nh_(nodeHandleWithQueueAndUnlimitedSize(private_nh_, &action_clients_queue_))
   // no spin threads; replanningThread spins action_clients_queue_ instead
   , action_client_exe_path_(action_clients_nh_, "exe_path", false)
   , action_client_get_path_(action_clients_nh_, "get_path", false)
