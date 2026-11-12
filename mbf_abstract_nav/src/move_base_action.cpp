@@ -62,10 +62,10 @@ ros::NodeHandle nodeHandleWithQueueAndUnlimitedSize(ros::NodeHandle nh, ros::Cal
     if (nh.getParam(param, queue_size) && queue_size > 0)
     {
       ROS_WARN_STREAM_NAMED("move_base", "Ignoring " << action << "'s queue_size = " << queue_size
-                                                     << ": and setting it to unlimited (0) to avoid lost results that "
+                                                     << " and setting it to unlimited (0) to avoid lost results that "
                                                         "could block the callback");
-      nh.setParam(param, 0);
     }
+    nh.setParam(param, 0);
   }
   return nh;
 }
