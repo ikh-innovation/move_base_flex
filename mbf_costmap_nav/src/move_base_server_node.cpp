@@ -42,18 +42,21 @@
 #include <signal.h>
 #include <mbf_utility/types.h>
 #include <tf2_ros/transform_listener.h>
+#include <atomic>
 
 typedef boost::shared_ptr<mbf_costmap_nav::CostmapNavigationServer> CostmapNavigationServerPtr;
 mbf_costmap_nav::CostmapNavigationServer::Ptr costmap_nav_srv_ptr;
 
-void sigintHandler(int sig)
+std::atomic<bool> shutdown_requested(false);
+std::atomic<bool> server_running(false);
+
+void sigintHandler(int)
 {
-  ROS_INFO_STREAM("Shutdown costmap navigation server.");
-  if(costmap_nav_srv_ptr)
+  shutdown_requested = true;
+  if (!server_running)
   {
-    costmap_nav_srv_ptr->stop();
+    ros::requestShutdown();
   }
-  ros::shutdown();
 }
 
 int main(int argc, char **argv)
@@ -74,7 +77,18 @@ int main(int argc, char **argv)
   tf2_ros::TransformListener tf_listener(*tf_listener_ptr);
 #endif
   costmap_nav_srv_ptr = boost::make_shared<mbf_costmap_nav::CostmapNavigationServer>(tf_listener_ptr);
-  ros::spin();
+  server_running = true;
+  const ros::WallDuration timeout(0.1);
+  while (ros::ok() && !shutdown_requested)
+  {
+    ros::getGlobalCallbackQueue()->callAvailable(timeout);
+  }
+  if (ros::ok())
+  {
+    ROS_INFO_STREAM("Shutdown costmap navigation server.");
+    costmap_nav_srv_ptr->stop();
+    ros::shutdown();
+  }
 
   // explicitly call destructor here, otherwise costmap_nav_srv_ptr will be
   // destructed after tearing down internally allocated static variables
